@@ -1,0 +1,10 @@
+sampling_rate: 25600
+window_size: 4096
+overlap: 0.5
+
+band:
+  lf: [0, 50]
+  mf: [50, 1000]
+  hf: [1000, 8000]
+
+mode: production

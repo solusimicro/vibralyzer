@@ -1,0 +1,8 @@
+broker: 192.168.1.10   # atau localhost jika edge
+port: 1883
+
+raw_topic: vibration/raw/+/+
+feature_topic: vibration/feature/+/+
+
+qos: 1
+retain: false

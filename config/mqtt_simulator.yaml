@@ -1,0 +1,5 @@
+broker: localhost
+port: 1883
+raw_topic: vibration/raw/PUMP_01/DE
+feature_topic: vibration/feature/PUMP_01/DE
+qos: 1

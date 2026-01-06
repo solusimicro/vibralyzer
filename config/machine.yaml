@@ -1,0 +1,13 @@
+PUMP_01:
+  rpm: 1480
+  bearing:
+    bpfo: 92
+    bpfi: 118
+
+PUMP_02:
+  rpm: 2960
+  bearing:
+    bpfo: 184
+    bpfi: 236
+    bpfo: 184
+    bpfi: 236
