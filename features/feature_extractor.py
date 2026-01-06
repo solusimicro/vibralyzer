@@ -1,29 +1,28 @@
 from datetime import datetime
 
-def process_signal(payload):
+def process_signal(payload, features):
     return {
         "asset": payload["asset"],
         "point": payload["point"],
 
-        "health_index": 0.85,
-        "condition": "NORMAL",
+        "health_index": features["health_index"],
+        "condition": features["machine_status"],
 
         "velocity": {
-            "rms_mm_s": 2.1,
-            "iso_zone": "B"
+            "rms_mm_s": features["velocity_rms_mm_s"],
+            "iso_zone": features["iso_zone"]
         },
 
         "bearing": {
-            "env_kurtosis": 3.2,
-            "energy_ratio": 0.25
+            "env_kurtosis": features.get("env_kurtosis"),
+            "energy_ratio": features.get("hf_energy_ratio")
         },
 
         "harmonics": {
-            "1x_g": 0.12,
-            "2x_g": 0.05,
-            "3x_g": 0.03
+            "1x_g": features.get("order_1x"),
+            "2x_g": features.get("order_2x"),
+            "3x_g": features.get("order_3x")
         },
 
         "timestamp": datetime.now().isoformat()
     }
-

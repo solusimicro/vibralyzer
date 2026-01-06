@@ -8,6 +8,7 @@ from features.order_features import order_features
 from models.health_index import health_index
 from core.band_manager import get_frequency_band
 from models.machine_status import machine_status
+from models.iso_zone import iso_zone
 
 
 class FeaturePipeline:
@@ -32,8 +33,8 @@ class FeaturePipeline:
             static_band=self.static_band
         )
 
-        # === 3️⃣ Time-domain features ===
-        features.update(time_features(signal))
+        # === 3️⃣ Time-domain features (ACC) ===
+        features.update(time_features(signal))   # rms = acc_rms_g
 
         # === 4️⃣ Frequency-domain features ===
         features.update(
@@ -54,7 +55,31 @@ class FeaturePipeline:
                 )
             )
 
-        # === 6️⃣ Health index (LAST) ===
+        # === 6️⃣ Velocity RMS calculation (FFT integration) ===
+        n = len(signal)
+        spectrum = np.fft.rfft(signal)
+        freqs = np.fft.rfftfreq(n, d=1/fs)
+
+        # avoid divide by zero
+        freqs[0] = 1e-6
+
+        # Acc (g) → Velocity (mm/s)
+        vel_spectrum = spectrum / (2 * np.pi * freqs)
+        vel_time = np.fft.irfft(vel_spectrum, n=n)
+
+        vel_rms_mm_s = np.sqrt(np.mean(vel_time**2)) * 1000  # m/s → mm/s
+
+        features["velocity_rms_mm_s"] = float(vel_rms_mm_s)
+
+        # === 7️⃣ ISO Zone (VELOCITY BASED) ===
+        features["iso_zone"] = iso_zone(
+            velocity_rms_mm_s=vel_rms_mm_s,
+            dominant_freq=features.get("dominant_freq", 0)
+        )
+
+        # === 8️⃣ Health & Machine Status (LAST) ===
         features["health_index"] = health_index(features)
         features["status"] = machine_status(features)
+
         return features
+        # === DONE ===  
