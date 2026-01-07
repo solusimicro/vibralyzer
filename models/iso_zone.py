@@ -1,29 +1,19 @@
-import math
-
-def iso_zone(acc_rms_g, dominant_freq):
+def calculate_iso_zone(vel_rms):
     """
-    ISO 10816 / 20816 (simplified)
-    Return zone A/B/C/D
+    ISO 10816 / 20816 velocity RMS classification (mm/s)
+    Returns: (zone_code, zone_label)
     """
 
-    if dominant_freq <= 0:
-        return "UNKNOWN"
+    try:
+        vel = float(vel_rms)
+    except (TypeError, ValueError):
+        return 0, "UNKNOWN"
 
-    # g → m/s²
-    acc_ms2 = acc_rms_g * 9.81
-
-    # velocity RMS (m/s)
-    vel_ms = acc_ms2 / (2 * math.pi * dominant_freq)
-
-    # mm/s
-    vel_mm_s = vel_ms * 1000
-
-    if vel_mm_s < 1.8:
-        return "A"
-    elif vel_mm_s < 4.5:
-        return "B"
-    elif vel_mm_s < 7.1:
-        return "C"
+    if vel <= 2.8:
+        return 1, "A"
+    elif vel <= 4.5:
+        return 2, "B"
+    elif vel <= 7.1:
+        return 3, "C"
     else:
-        return "D"
-#Nilai threshold = mesin rotating umum (Class II–III)
+        return 4, "D"

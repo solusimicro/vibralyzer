@@ -1,17 +1,38 @@
+import json
 import paho.mqtt.publish as publish
 
-def publish_scada_features(asset, point, features, broker="localhost"):
-    base_topic = f"vibration/feature/{asset}/{point}"
+def publish_scada_features(
+    asset,
+    point,
+    rpm,
+    health,
+    vel_rms,
+    iso_zone,
+    iso_zone_code,
+    faults,
+    status,
+    alarm_code=None,
+    recommendation=None    # 👈 TAMBAHKAN (INI SAJA)
+):
+    payload = {
+        "asset": asset,
+        "point": point,
+        "rpm": rpm,
+        "health_index": health,
+        "vel_rms": vel_rms,
+        "iso_zone": iso_zone,
+        "iso_zone_code": iso_zone_code,
+        "status": status,
+        "faults": faults
+    }
 
-    for key, value in features.items():
-        if value is None:
-            continue
+    # Optional fields (AMAN)
+    if alarm_code is not None:
+        payload["alarm_code"] = alarm_code
 
-        publish.single(
-            topic=f"{base_topic}/{key}",
-            payload=str(value),
-            hostname=broker,
-            qos=1
-        )
+    if recommendation:
+        payload["recommendation"] = recommendation   # 👈 1 BARIS PENTING
 
+    topic = f"vibration/feature/{asset}/{point}"
+    publish.single(topic, json.dumps(payload), hostname="localhost")
 

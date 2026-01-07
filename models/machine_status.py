@@ -1,10 +1,11 @@
-def machine_status(features):
+def machine_status(features, faults):
     hi = features.get("health_index", 1)
-    rms = features.get("rms", 0)
-    kurt = features.get("kurtosis", 0)
 
-    if hi < 0.6 or kurt > 4:
+    if any(f["confidence"] > 0.8 for f in faults):
         return "ALARM"
-    if hi < 0.8 or kurt > 3:
+
+    if hi < 0.8 or faults:
         return "WARNING"
+
     return "NORMAL"
+
