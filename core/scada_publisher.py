@@ -1,6 +1,8 @@
 import json
 import paho.mqtt.publish as publish
 
+BROKER = "localhost"
+
 def publish_scada_features(
     asset,
     point,
@@ -12,9 +14,12 @@ def publish_scada_features(
     faults,
     status,
     alarm_code=None,
-    recommendation=None    # 👈 TAMBAHKAN (INI SAJA)
+    recommendation=None
 ):
-    payload = {
+    # ===============================
+    # 1️⃣ FEATURE TOPIC
+    # ===============================
+    feature_payload = {
         "asset": asset,
         "point": point,
         "rpm": rpm,
@@ -26,13 +31,33 @@ def publish_scada_features(
         "faults": faults
     }
 
-    # Optional fields (AMAN)
     if alarm_code is not None:
-        payload["alarm_code"] = alarm_code
+        feature_payload["alarm_code"] = alarm_code
 
+    feature_topic = f"vibration/feature/{asset}/{point}"
+
+    publish.single(
+        feature_topic,
+        json.dumps(feature_payload),
+        hostname=BROKER
+    )
+
+    # ===============================
+    # 2️⃣ RECOMMENDATION TOPIC
+    # ===============================
     if recommendation:
-        payload["recommendation"] = recommendation   # 👈 1 BARIS PENTING
+        rec_payload = {
+            "priority": recommendation.get("priority"),
+            "maintenance_type": recommendation.get("maintenance_type"),
+            "recommended_in_days": recommendation.get("recommended_in_days"),
+            "action": recommendation.get("action"),
+            "notes": recommendation.get("notes")
+        }
 
-    topic = f"vibration/feature/{asset}/{point}"
-    publish.single(topic, json.dumps(payload), hostname="localhost")
+        rec_topic = f"vibration/recommendation/{asset}/{point}"
 
+        publish.single(
+            rec_topic,
+            json.dumps(rec_payload),
+            hostname=BROKER
+        )

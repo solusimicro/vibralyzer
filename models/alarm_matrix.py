@@ -11,7 +11,7 @@ def evaluate_alarm(
 
     # Default
     alarm_code = 0
-    alarm_label = "NORMAL"
+    alarm_label = "NORMAL"  # noqa: F841
 
     max_conf = max(
         [f.get("confidence", 0) for f in faults],
