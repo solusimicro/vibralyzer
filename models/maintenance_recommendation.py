@@ -1,80 +1,56 @@
-class MaintenanceRecommender:
+def generate_recommendation(faults):
+    """
+    faults = list of persistent fault dict
+    """
+    if not faults:
+        return None
 
-    def recommend(self, status, faults, iso_zone, vel_rms, health_index):
+    # Ambil fault paling kritis
+    fault = max(
+        faults,
+        key=lambda f: (
+            ["LOW", "MEDIUM", "HIGH", "CRITICAL"].index(f["severity"]),
+            f.get("confidence", 0)
+        )
+    )
 
-        # DEFAULT
-        recommendation = {
-            "priority": "LOW",
-            "maintenance_type": "CBM",
-            "recommended_in": "30 days",
-            "action": "Continue monitoring",
-            "notes": "Machine operating within acceptable limits"
-        }
+    severity = fault["severity"]
+    fault_type = fault["fault"]
 
-        # 🔴 ALARM
-        if status == "ALARM":
-            recommendation.update({
-                "priority": "HIGH",
-                "maintenance_type": "CM",
-                "recommended_in": "NOW",
-                "action": self._alarm_action(faults),
-                "notes": "Immediate maintenance required to avoid failure"
-            })
-
-        # 🟠 WARNING
-        elif status == "WARNING":
-            recommendation.update({
+    if fault_type == "BEARING_FAULT":
+        if severity == "MEDIUM":
+            return {
                 "priority": "MEDIUM",
-                "maintenance_type": "PM",
-                "recommended_in": "7 days",
-                "action": self._warning_action(faults),
-                "notes": "Early degradation detected"
-            })
+                "maintenance_type": "INSPECTION",
+                "recommended_in_days": 14,
+                "action": "Periksa kondisi bearing dan pelumasan",
+                "notes": "Indikasi awal kerusakan bearing terdeteksi konsisten"
+            }
 
-        # 🟢 NORMAL tapi health drop
-        elif health_index < 0.85:
-            recommendation.update({
-                "priority": "LOW",
-                "maintenance_type": "CBM",
-                "recommended_in": "14 days",
-                "action": "Schedule inspection",
-                "notes": "Health index trending down"
-            })
+        if severity == "HIGH":
+            return {
+                "priority": "HIGH",
+                "maintenance_type": "PLANNED_REPLACEMENT",
+                "recommended_in_days": 7,
+                "action": "Rencanakan penggantian bearing",
+                "notes": "Degradasi bearing meningkat"
+            }
 
-        return recommendation
+        if severity == "CRITICAL":
+            return {
+                "priority": "CRITICAL",
+                "maintenance_type": "IMMEDIATE_SHUTDOWN",
+                "recommended_in_days": 0,
+                "action": "Hentikan mesin dan ganti bearing",
+                "notes": "Risiko kegagalan bearing tinggi"
+            }
 
-    def _alarm_action(self, faults):
-        if not faults:
-            return "Inspect machine immediately"
+    # Default fallback
+    return {
+        "priority": severity,
+        "maintenance_type": "MONITORING",
+        "recommended_in_days": 30,
+        "action": "Pantau kondisi mesin",
+        "notes": "Anomali terdeteksi namun belum spesifik"
+    }
 
-        main_fault = faults[0]["fault"]
-
-        fault_actions = {
-            "UNBALANCE": "Check rotor balance and coupling",
-            "MISALIGNMENT": "Inspect shaft alignment",
-            "BEARING_FAULT": "Inspect bearing condition, prepare replacement",
-            "LOOSENESS": "Inspect foundation and mechanical fastening"
-        }
-
-        return fault_actions.get(
-            main_fault,
-            "Perform detailed vibration analysis"
-        )
-
-    def _warning_action(self, faults):
-        if not faults:
-            return "Schedule vibration re-measurement"
-
-        main_fault = faults[0]["fault"]
-
-        fault_actions = {
-            "UNBALANCE": "Plan rotor balancing",
-            "MISALIGNMENT": "Check alignment during next shutdown",
-            "BEARING_FAULT": "Monitor bearing trend closely",
-            "LOOSENESS": "Check bolts and mounting"
-        }
-
-        return fault_actions.get(
-            main_fault,
-            "Increase monitoring frequency"
-        )

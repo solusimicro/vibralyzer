@@ -1,59 +1,25 @@
-def evaluate_alarm(
-    iso_zone_code,
-    faults,
-    health_index
-):
-    """
-    Returns:
-        alarm_code (int): 0..3
-        alarm_label (str)
-    """
+def evaluate_alarm(alarm_status, health_score, faults):
+    alarm_code = alarm_status
 
-    # Default
-    alarm_code = 0
-    alarm_label = "NORMAL"  # noqa: F841
+    # Rule 1: Health-based escalation
+    if health_score < 0.6:
+        alarm_code = max(alarm_code, 1)
 
-    max_conf = max(
-        [f.get("confidence", 0) for f in faults],
-        default=0
-    )
-
-    # =========================
-    # HEALTH OVERRIDE
-    # =========================
-    if health_index < 0.4:
-        return 3, "TRIP"
-    elif health_index < 0.6:
+    if health_score < 0.4:
         alarm_code = max(alarm_code, 2)
 
-    # =========================
-    # ISO ZONE BASED
-    # =========================
-    if iso_zone_code == 1:  # A
-        if faults and max_conf >= 0.7:
-            alarm_code = max(alarm_code, 1)
+    # Rule 2: Fault-based override
+    if any(
+        f["fault"] == "BEARING_DEFECT" and f["confidence"] > 0.8
+        for f in faults
+    ):
+        alarm_code = max(alarm_code, 2)
 
-    elif iso_zone_code == 2:  # B
-        if faults and max_conf >= 0.7:
-            alarm_code = max(alarm_code, 2)
-        else:
-            alarm_code = max(alarm_code, 1)
+    if any(
+        f["fault"] == "BEARING_DEFECT" and f["confidence"] > 0.95
+        for f in faults
+    ):
+        alarm_code = max(alarm_code, 3)
 
-    elif iso_zone_code == 3:  # C
-        if faults and max_conf >= 0.5:
-            alarm_code = max(alarm_code, 2)
+    return alarm_code
 
-    elif iso_zone_code == 4:  # D
-        return 3, "TRIP"
-
-    # =========================
-    # LABEL MAP
-    # =========================
-    label_map = {
-        0: "NORMAL",
-        1: "WARNING",
-        2: "ALARM",
-        3: "TRIP"
-    }
-
-    return alarm_code, label_map[alarm_code]

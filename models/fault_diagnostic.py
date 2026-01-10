@@ -1,49 +1,84 @@
-from utils.logger import get_logger
+# models/fault_diagnostic.py
 
-logger = get_logger("fault_diagnostic")
+def detect_fault_with_confidence(features: dict):
+    """
+    Rule-based fault confidence (Bearing focused – early detection friendly)
+    """
 
-def detect_fault_with_confidence(features):
-    faults = []
-
-    # =========================
-    # BEARING FAULT
-    # =========================
-    if (
-        features.get("bearing_energy_ratio", 0) > 0.35 and
-        features.get("env_kurtosis", 0) > 3.5 and
-        features.get("env_rms", 0) > 1.2 * features.get("baseline_env_rms", 1)
-    ):
-        confidence = min(
-            1.0,
-            features["bearing_energy_ratio"]
-        )
-        faults.append({
-            "fault": "BEARING_DEFECT",
-            "confidence": round(confidence, 2)
-        })
+    score = 0.0
+    evidence = []
 
     # =========================
-    # IMBALANCE
+    # 1️⃣ HF RMS (Early damage)
     # =========================
-    if (
-        abs(features.get("dominant_freq", 0) - features.get("rpm", 0)/60) < 0.5 and
-        features.get("rms", 0) > 1.5 * features.get("baseline_rms", 1)
-    ):
-        faults.append({
-            "fault": "IMBALANCE",
-            "confidence": 0.7
-        })
+    hf = features.get("acc_hf_rms_g", 0)
+    if hf >= 0.6:
+        score += 0.30
+        evidence.append("HF_RMS_ALARM")
+    elif hf >= 0.3:
+        score += 0.15
+        evidence.append("HF_RMS_WARNING")
 
     # =========================
-    # MISALIGNMENT
+    # 2️⃣ Envelope Kurtosis
     # =========================
-    if (
-        features.get("order_2x", 0) > features.get("order_1x", 0) * 0.6
-    ):
-        faults.append({
-            "fault": "MISALIGNMENT",
-            "confidence": 0.6
-        })
+    kurt = features.get("envelope_kurtosis", 0)
+    if kurt >= 5.0:
+        score += 0.30
+        evidence.append("ENV_KURT_HIGH")
+    elif kurt >= 3.5:
+        score += 0.15
+        evidence.append("ENV_KURT_WARN")
 
-    return faults
+    # =========================
+    # 3️⃣ Bearing Energy Ratio
+    # =========================
+    ber = features.get("bearing_energy_ratio", 0)
+    if ber >= 0.35:
+        score += 0.20
+        evidence.append("BEARING_ENERGY_HIGH")
+    elif ber >= 0.2:
+        score += 0.10
+        evidence.append("BEARING_ENERGY_WARN")
+
+    # =========================
+    # 4️⃣ Crest Factor
+    # =========================
+    cf = features.get("crest_factor", 0)
+    if cf >= 6.0:
+        score += 0.10
+        evidence.append("CREST_HIGH")
+    elif cf >= 4.0:
+        score += 0.05
+        evidence.append("CREST_WARN")
+
+    # =========================
+    # 5️⃣ Spectral Entropy
+    # =========================
+    se = features.get("spectral_entropy", 0)
+    if se >= 6.0:
+        score += 0.10
+        evidence.append("ENTROPY_HIGH")
+
+    # =========================
+    # NORMALIZE
+    # =========================
+    confidence = min(score, 1.0)
+
+    if confidence >= 0.7:
+        severity = "HIGH"
+    elif confidence >= 0.4:
+        severity = "MEDIUM"
+    elif confidence >= 0.2:
+        severity = "LOW"
+    else:
+        return []
+
+    return [{
+        "fault": "BEARING_FAULT",
+        "confidence": round(confidence, 2),
+        "severity": severity,
+        "evidence": evidence
+    }]
+
 

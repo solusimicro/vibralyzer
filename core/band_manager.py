@@ -1,3 +1,8 @@
+"""
+Band manager bersifat deterministik dan tidak mengandung logic diagnosis.
+Digunakan oleh seluruh feature extractor untuk konsistensi domain frekuensi.
+"""
+
 def get_frequency_band(fs, rpm=None, static_band=None):
     """
     Hybrid band selector:
