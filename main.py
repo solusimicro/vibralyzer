@@ -1,66 +1,91 @@
-# ============================================================
-# MAIN – VIBRATION EDGE PROCESSOR
-# ============================================================
-
 import json
-
-from core.mqtt_client import start_mqtt
-from core.signal_buffer import SignalBuffer
+import os
+import sys
+import numpy as np
+import yaml
+import paho.mqtt.client as mqtt
 from core.feature_pipeline import FeaturePipeline
 
+# =========================
+# LOAD MACHINE CONFIG
+# =========================
+yaml_path = os.path.join("config", "machine.yaml")
 
-# ============================================================
-# INIT
-# ============================================================
-buffer = SignalBuffer(
-    window_size=4096,
-    overlap=0.5
-)
+if not os.path.exists(yaml_path):
+    print(f"❌ File {yaml_path} tidak ditemukan!")
+    sys.exit(1)
 
+with open(yaml_path, "r") as f:
+    MACHINE_CONFIG_RAW = yaml.safe_load(f)
+
+# normalize asset keys: strip + uppercase
+MACHINE_CONFIG = {k.strip().upper(): v for k, v in MACHINE_CONFIG_RAW.items()}
+
+print("✅ Loaded machine assets:", list(MACHINE_CONFIG.keys()))
+
+# =========================
+# INIT PIPELINE
+# =========================
 pipeline = FeaturePipeline()
+FS = 25600
 
+# =========================
+# MQTT CALLBACKS
+# =========================
+def on_connect(client, userdata, flags, rc):
+    print("✅ MQTT connected")
+    client.subscribe("vibration/raw/#")
+    print("📡 Subscribed to: vibration/raw/#")
 
-# ============================================================
-# MQTT CALLBACK
-# ============================================================
-def on_message(msg):
+def on_message(client, userdata, msg):
     try:
-        data = json.loads(msg.payload.decode("utf-8"))
+        payload = json.loads(msg.payload.decode("utf-8"))
 
-        signal = data.get("signal", [])
-        fs = data.get("fs", 1000)
-        rpm = data.get("rpm")
+        # ambil asset
+        raw_asset = payload.get("asset", None)
+        asset = ''.join(c for c in str(raw_asset) if c.isprintable()).strip().upper()
 
-        asset = data.get("asset", "UNKNOWN")
-        point = data.get("point", "UNKNOWN")
+        # skip payload kosong, NONE, atau invalid
+        if not asset or asset == "NONE":
+            return  # langsung abaikan tanpa warning
 
-        # Push to rolling buffer
-        windows = buffer.push(signal)
+        # ambil point
+        raw_point = payload.get("point", "UNKNOWN")
+        point = ''.join(c for c in str(raw_point) if c.isprintable()).strip().upper()
 
-        for win in windows:
-            # =====================================
-            # PIPELINE = PROCESS + PUBLISH
-            # =====================================
-            pipeline.process(
-                signal=win,
-                fs=fs,
-                rpm=rpm,
-                asset=asset,
-                point=point
-            )
+        # debug optional
+        # print("DEBUG: payload asset =", repr(raw_asset), "| normalized =", asset)
+
+        if asset not in MACHINE_CONFIG:
+            print(f"⚠️ Asset '{asset}' tidak ditemukan di machine.yaml, skip processing")
+            return
+
+        # ambil signal
+        signal = np.array(payload.get("acceleration_g") or payload.get("signal") or [])
+
+        if len(signal) < 28:
+            print(f"⚠️ Signal terlalu pendek ({len(signal)} sampel) untuk asset {asset}, skip processing")
+            return
+
+        # ambil RPM & bearing
+        machine = MACHINE_CONFIG[asset]
+        rpm = machine.get("rpm", 0)
+        bearing_data = machine.get("bearing", {})
+
+        # proses pipeline
+        pipeline.process(signal=signal, fs=FS, asset=asset, point=point, rpm=rpm)
 
     except Exception as e:
-        print("❌ ERROR processing message:", e)
+        print("❌ Error processing message:", e)
+
+# =========================
+# MQTT CLIENT
+# =========================
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+
+client.connect("localhost", 1883, 60)
+client.loop_forever()
 
 
-# ============================================================
-# ENTRY POINT
-# ============================================================
-if __name__ == "__main__":
-    start_mqtt(
-        broker="localhost",
-        port=1883,
-        topic="vibration/raw/#",
-        on_message_callback=on_message,
-        qos=1
-    )

@@ -13,7 +13,7 @@ import paho.mqtt.publish as publish
 # ============================================================
 def start_mqtt(broker, port, topic, on_message_callback, qos=1):
     """
-    MQTT client untuk menerima data getaran.
+    MQTT client untuk menerima data vibrasi.
     Modul ini hanya menangani koneksi & subscription (infra layer).
     """
 

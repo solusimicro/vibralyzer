@@ -1,27 +1,27 @@
-# ============================================================
-# FEATURE PIPELINE – PREVENTIVE MAINTENANCE VIBRATION
-# + ISO ZONE (ISO 20816)
-# ============================================================
-
+# core/feature_pipeline.py (update)
 import numpy as np
 from scipy.signal import butter, filtfilt, hilbert
+import json
+import paho.mqtt.publish as publish
 
 from models.fault_diagnostic import detect_fault_with_confidence
 from models.fault_persistence import FaultPersistence
 from models.maintenance_recommendation import generate_recommendation
-from core.scada_publisher import publish_scada_features
+from core.scada_publisher import flatten_dict
+
+BROKER = "localhost"
 
 
-# ============================================================
+# ----------------------------
 # UTIL
-# ============================================================
+# ----------------------------
 def rms(x):
     return np.sqrt(np.mean(x ** 2)) if len(x) > 0 else 0.0
 
 
-# ============================================================
+# ----------------------------
 # FEATURE FUNCTIONS
-# ============================================================
+# ----------------------------
 def time_domain_features(signal):
     signal = np.asarray(signal)
     rms_val = rms(signal)
@@ -80,18 +80,16 @@ def order_features(signal, fs, rpm, bw=0.03):
 
     a1 = get(1)
     a2 = get(2)
-
     return {
         "1x_order_amp": float(a1),
         "2x_order_ratio": float(a2 / a1) if a1 > 0 else 0.0
     }
 
 
-# ============================================================
-# ISO ZONE (ISO 20816 – GENERAL MACHINERY)
-# ============================================================
+# ----------------------------
+# ISO ZONE
+# ----------------------------
 def overall_velocity_rms_mm_s(signal, fs):
-    # signal diasumsikan acceleration (g)
     acc_ms2 = np.asarray(signal) * 9.81
     vel = np.cumsum(acc_ms2) / fs
     return float(rms(vel) * 1000)  # mm/s
@@ -108,36 +106,50 @@ def iso_zone(vel_rms):
         return "D", 2
 
 
-# ============================================================
+# ----------------------------
 # PIPELINE CLASS
-# ============================================================
+# ----------------------------
 class FeaturePipeline:
 
     def __init__(self):
         self.persistence = FaultPersistence(window=5)
 
     def process(self, signal, fs, asset, point, rpm=None):
+        signal = np.asarray(signal)
 
-        # =====================================================
-        # 1️⃣ FEATURE EXTRACTION
-        # =====================================================
+        # ----------------------------
+        # 1️⃣ PUBLISH RAW SIGNAL
+        # ----------------------------
+        raw_topic = f"vibration/raw/{asset}/{point}"
+        publish.single(
+            raw_topic,
+            json.dumps({"acceleration_g": signal.tolist()}),
+            hostname=BROKER
+        )
+
+        # ----------------------------
+        # 2️⃣ FEATURE EXTRACTION
+        # ----------------------------
         features = {
             "acc_hf_rms_g": acc_hf_rms(signal, fs),
             **time_domain_features(signal),
             **envelope_features(signal, fs),
             **frequency_features(signal, fs),
-            **order_features(signal, fs, rpm)
+            **order_features(signal, fs, rpm),
+
+            # ➕ SCADA-friendly single value
+            "acceleration_rms_g": float(np.sqrt(np.mean(signal**2))),
+            "acceleration_peak_g": float(np.max(np.abs(signal))) if len(signal) > 0 else 0.0
         }
 
         # ISO velocity
         vel_rms = overall_velocity_rms_mm_s(signal, fs)
         zone, zone_code = iso_zone(vel_rms)
-
         features["overall_vel_rms_mm_s"] = vel_rms
 
-        # =====================================================
-        # 2️⃣ ALARM STATUS & HEALTH
-        # =====================================================
+        # ----------------------------
+        # 3️⃣ ALARM STATUS & HEALTH
+        # ----------------------------
         if features["acc_hf_rms_g"] >= 0.6:
             alarm_status = "ALARM"
         elif features["acc_hf_rms_g"] >= 0.3:
@@ -147,11 +159,10 @@ class FeaturePipeline:
 
         health_score = max(0.0, 100.0 - features["acc_hf_rms_g"] * 100.0)
 
-        # =====================================================
-        # 3️⃣ FAULT DIAGNOSTIC + PERSISTENCE
-        # =====================================================
+        # ----------------------------
+        # 4️⃣ FAULT DIAGNOSTIC + PERSISTENCE
+        # ----------------------------
         raw_faults = detect_fault_with_confidence(features)
-
         persistent_faults = self.persistence.update(
             asset=asset,
             point=point,
@@ -160,9 +171,9 @@ class FeaturePipeline:
 
         recommendation = generate_recommendation(persistent_faults) if persistent_faults else None
 
-        # =====================================================
-        # 4️⃣ CONTEXT
-        # =====================================================
+        # ----------------------------
+        # 5️⃣ CONTEXT
+        # ----------------------------
         context = {
             "alarm_status": alarm_status,
             "health_score": health_score,
@@ -171,31 +182,37 @@ class FeaturePipeline:
             "iso_zone_code": zone_code
         }
 
-        # =====================================================
-        # 5️⃣ FINAL ALARM CODE
-        # =====================================================
+        # ----------------------------
+        # 6️⃣ FINAL ALARM CODE
+        # ----------------------------
         alarm_code = 0
-
         if any(f.get("severity") in ("HIGH", "CRITICAL") for f in persistent_faults):
             alarm_code = 2
         elif persistent_faults:
             alarm_code = 1
 
-        # ISO SAFETY OVERRIDE
         if zone_code == 2:
             alarm_code = max(alarm_code, 2)
 
-        # =====================================================
-        # 6️⃣ PUBLISH (FINAL)
-        # =====================================================
-        publish_scada_features(
-            asset=asset,
-            point=point,
-            rpm=rpm,
-            features=features,
-            context=context,
-            alarm_code=alarm_code,
-            recommendation=recommendation
-        )
+        # ----------------------------
+        # 7️⃣ PUBLISH FEATURES + CONTEXT (FLAT)
+        # ----------------------------
+        payload = {
+            "asset": asset,
+            "point": point,
+            "rpm": rpm,
+            "alarm_code": alarm_code
+        }
+        payload.update(flatten_dict(features))
+        payload.update(flatten_dict(context))
 
+        feature_topic = f"vibration/feature/{asset}/{point}"
+        publish.single(feature_topic, json.dumps(payload), hostname=BROKER)
 
+        # ----------------------------
+        # 8️⃣ PUBLISH RECOMMENDATION (FLAT)
+        # ----------------------------
+        if recommendation:
+            rec_payload = flatten_dict(recommendation)
+            rec_topic = f"vibration/recommendation/{asset}/{point}"
+            publish.single(rec_topic, json.dumps(rec_payload), hostname=BROKER)
