@@ -1,2 +1,8 @@
-paho-mqtt==2.1.0
- 
+numpy
+scipy
+pandas
+paho-mqtt
+scikit-learn
+matplotlib
+fastapi
+uvicorn

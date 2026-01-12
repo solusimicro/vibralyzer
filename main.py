@@ -41,39 +41,62 @@ def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
 
-        # ambil asset
-        raw_asset = payload.get("asset", None)
+        # -------------------------
+        # ASSET
+        # -------------------------
+        raw_asset = payload.get("asset")
         asset = ''.join(c for c in str(raw_asset) if c.isprintable()).strip().upper()
-
-        # skip payload kosong, NONE, atau invalid
         if not asset or asset == "NONE":
-            return  # langsung abaikan tanpa warning
+            return
 
-        # ambil point
+        # -------------------------
+        # POINT
+        # -------------------------
         raw_point = payload.get("point", "UNKNOWN")
         point = ''.join(c for c in str(raw_point) if c.isprintable()).strip().upper()
 
-        # debug optional
-        # print("DEBUG: payload asset =", repr(raw_asset), "| normalized =", asset)
-
         if asset not in MACHINE_CONFIG:
-            print(f"⚠️ Asset '{asset}' tidak ditemukan di machine.yaml, skip processing")
+            print(f"⚠️ Asset '{asset}' tidak ditemukan di machine.yaml")
             return
 
-        # ambil signal
-        signal = np.array(payload.get("acceleration_g") or payload.get("signal") or [])
+        # -------------------------
+        # SIGNAL
+        # -------------------------
+        signal = payload.get("acceleration_g", payload.get("signal", []))
+        signal = np.asarray(signal, dtype=float)
 
         if len(signal) < 28:
-            print(f"⚠️ Signal terlalu pendek ({len(signal)} sampel) untuk asset {asset}, skip processing")
+            print(f"⚠️ Signal terlalu pendek ({len(signal)}) untuk {asset}")
             return
 
-        # ambil RPM & bearing
+        # -------------------------
+        # TEMPERATURE (SAFE)
+        # -------------------------
+        temperature = None
+        temp_raw = payload.get("temperature_c", payload.get("temperature"))
+        if temp_raw is not None:
+            try:
+                temperature = float(temp_raw)
+            except ValueError:
+                print(f"⚠️ Invalid temperature value: {temp_raw}")
+
+        # -------------------------
+        # CONFIG
+        # -------------------------
         machine = MACHINE_CONFIG[asset]
         rpm = machine.get("rpm", 0)
-        bearing_data = machine.get("bearing", {})
 
-        # proses pipeline
-        pipeline.process(signal=signal, fs=FS, asset=asset, point=point, rpm=rpm)
+        # -------------------------
+        # PROCESS
+        # -------------------------
+        pipeline.process(
+            signal=signal,
+            fs=FS,
+            asset=asset,
+            point=point,
+            rpm=rpm,
+            temperature=temperature
+        )
 
     except Exception as e:
         print("❌ Error processing message:", e)
